@@ -19,8 +19,8 @@ class CrawlAgenda:
     * Avoid crawling the same URL twice (including by concurrent requests).
     * Efficiently return one new (arbitrary) uncrawled URL at a time.
     * Keep memory use reasonable by not storing duplicate URLs.
-    * Store links in the order they're found, so we crawl progressively from the
-      starting point outward.
+    * Store uncrawled links in the order they're found, so we crawl
+      progressively from the starting point outward.
     '''
 
     def __init__(self):
@@ -93,7 +93,7 @@ async def main(start_url, pool_size):
     async with aiohttp.ClientSession(connector=conn) as session:
         http_tasks = set()
 
-        # loop until we exhaust all links
+        # loop until we exhaust all links (not likely)
         while http_tasks or agenda.more_to_crawl():
 
             # top up the task pool
@@ -130,10 +130,14 @@ if __name__ == '__main__':
         raise SystemExit(1)
 
     start_url = sys.argv[1]
-    log_level = logging.DEBUG if '--debug' in sys.argv else logging.INFO
-    pool_size = 100
+    pool_size = 20
 
-    logging.basicConfig(level=log_level)
+    if '--debug' in sys.argv:
+        log_level = logging.DEBUG
+        logging.basicConfig(level=log_level)
+    else:
+        # disable noisy logging of caught errors from asyncio
+        logging.disable()
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main(start_url, pool_size))
