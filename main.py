@@ -64,8 +64,20 @@ def crawl_html(body):
 
 
 async def fetch(session, url):
-    async with session.get(url) as response:
-        return (url, await response.text())
+    try:
+        async with session.get(url) as response:
+            content_type = response.headers.get('Content-Type')
+            if content_type:
+                content_type = content_type.split(';')[0]
+                if content_type == 'text/html':
+                    return (url, await response.text())
+    except aiohttp.ClientError as ex:
+        # In a production system, we would want retry logic, a dead letter
+        # queue, etc. for failed requests -- but for this exercise we'll just
+        # discard them.
+        logging.debug('ClientError for url %r: %s', url, ex)
+
+    return (url, '')
 
 
 async def main(start_url, pool_size):
