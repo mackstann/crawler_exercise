@@ -3,6 +3,9 @@
 import asyncio
 import logging
 import sys
+from collections import OrderedDict
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -16,20 +19,24 @@ class CrawlAgenda:
     * Avoid crawling the same URL twice (including by concurrent requests).
     * Efficiently return one new (arbitrary) uncrawled URL at a time.
     * Keep memory use reasonable by not storing duplicate URLs.
+    * Store links in the order they're found, so we crawl progressively from the
+      starting point outward.
     '''
-    _crawled = set([])
-    _crawling = set([])
-    _to_crawl = set([])
+
+    def __init__(self):
+        self._crawled = set([])
+        self._crawling = set([])
+        self._to_crawl = OrderedDict()
 
     def add_new_url(self, url):
         if url not in self._crawled and url not in self._crawling:
-            self._to_crawl.add(url)
+            self._to_crawl[url] = None
 
     def more_to_crawl(self):
         return bool(self._to_crawl)
 
     def acquire_url(self):
-        url = self._to_crawl.pop()
+        url, _ = self._to_crawl.popitem(last=False) # pop the first (oldest) url
         self._crawling.add(url)
         return url
 
@@ -39,14 +46,21 @@ class CrawlAgenda:
 
 
 def crawl_html(body):
-    # parse
-    # iterate through links
-    # agenda.add_new_url()
-    import random
-    return [
-            'http://example.com/' + str(random.random()),
-            'http://example.com/' + str(random.random()),
-    ]
+    links = set()
+
+    class LinkParser(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag != 'a':
+                return
+            href = dict(attrs).get('href')
+            if not href:
+                return
+            url = urlparse(href)
+            if url.scheme in ('http', 'https'):
+                links.add(href)
+
+    LinkParser().feed(body)
+    return links
 
 
 async def fetch(session, url):
@@ -89,13 +103,13 @@ async def main(start_url, pool_size):
                 agenda.mark_crawled(url)
 
                 links = crawl_html(body)
-                for url in links:
-                    agenda.add_new_url(url)
+                for link in links:
+                    agenda.add_new_url(link)
 
                 # print report to stdout for this finished page
                 print(url)
-                for url in links:
-                    print("  %s" % url)
+                for link in links:
+                    print("  %s" % link)
 
 
 if __name__ == '__main__':
