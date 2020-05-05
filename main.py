@@ -46,7 +46,7 @@ class CrawlAgenda:
 
 
 def crawl_html(body):
-    links = set()
+    links = []
 
     class LinkParser(HTMLParser):
         def handle_starttag(self, tag, attrs):
@@ -57,7 +57,7 @@ def crawl_html(body):
                 return
             url = urlparse(href)
             if url.scheme in ('http', 'https'):
-                links.add(href)
+                links.append(href)
 
     LinkParser().feed(body)
     return links
