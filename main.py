@@ -17,7 +17,7 @@ class CrawlAgenda:
     Priorities:
     * Handle state management for each URL so the crawling code doesn't need to.
     * Avoid crawling the same URL twice (including by concurrent requests).
-    * Efficiently return one new (arbitrary) uncrawled URL at a time.
+    * Efficiently return one new uncrawled URL at a time.
     * Keep memory use reasonable by not storing duplicate URLs.
     * Store uncrawled links in the order they're found, so we crawl
       progressively from the starting point outward.
@@ -71,11 +71,16 @@ async def fetch(session, url):
                 content_type = content_type.split(';')[0]
                 if content_type == 'text/html':
                     return (url, await response.text())
-    except aiohttp.ClientError as ex:
+    except (aiohttp.ClientError, ValueError) as ex:
         # In a production system, we would want retry logic, a dead letter
         # queue, etc. for failed requests -- but for this exercise we'll just
         # discard them.
-        logging.debug('ClientError for url %r: %s', url, ex)
+        #
+        # Also, catching ValueError is a bit broad, and not ideal, but aiohttp
+        # throws some ValueErrors for redirect problems that we have no control
+        # over:
+        # https://github.com/aio-libs/aiohttp/blob/cd5c48a619ba61bff48ac1f30be7845f1506896f/aiohttp/client.py#L534-L535
+        logging.debug('%s exception for url %r: %s', ex.__class__.__name__, url, ex)
 
     return (url, '')
 
@@ -107,6 +112,10 @@ async def main(agenda, start_url, pool_size, request_limit):
 
             logging.debug("# http_tasks: %d", len(http_tasks))
             if not http_tasks:
+                if requests_started == request_limit:
+                    print('Reached limit of %d requests' % request_limit)
+                else:
+                    print('Ran out of links to follow.')
                 break
 
             # Handle any completed requests, but don't wait for more than one --
@@ -136,7 +145,7 @@ if __name__ == '__main__':
 
     start_url = sys.argv[1]
     pool_size = 20
-    request_limit = 10
+    request_limit = 10000
 
     if '--debug' in sys.argv:
         log_level = logging.DEBUG
