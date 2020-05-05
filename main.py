@@ -80,29 +80,34 @@ async def fetch(session, url):
     return (url, '')
 
 
-async def main(start_url, pool_size):
+async def main(agenda, start_url, pool_size, request_limit):
     # Use a limit-per-host to be a good web citizen. This would ideally be
     # better coordinated with the pool of async tasks, so that we don't have a
     # bunch of tasks for the same domain that are "running" but blocked from
     # actually doing work by this limit.
     conn = aiohttp.TCPConnector(limit_per_host=8)
 
-    agenda = CrawlAgenda()
     agenda.add_new_url(start_url) # seed with the one initial url
 
     async with aiohttp.ClientSession(connector=conn) as session:
         http_tasks = set()
+        requests_started = 0
 
         # loop until we exhaust all links (not likely)
         while http_tasks or agenda.more_to_crawl():
 
             # top up the task pool
-            while len(http_tasks) < pool_size and agenda.more_to_crawl():
+            while (len(http_tasks) < pool_size and
+                    agenda.more_to_crawl() and
+                    requests_started < request_limit):
                 url = agenda.acquire_url()
                 logging.debug("acquired: %s", url)
                 http_tasks.add(asyncio.create_task(fetch(session, url)))
+                requests_started += 1
 
             logging.debug("# http_tasks: %d", len(http_tasks))
+            if not http_tasks:
+                break
 
             # Handle any completed requests, but don't wait for more than one --
             # that way, we can quickly add another request to the pool to
@@ -131,6 +136,7 @@ if __name__ == '__main__':
 
     start_url = sys.argv[1]
     pool_size = 20
+    request_limit = 10
 
     if '--debug' in sys.argv:
         log_level = logging.DEBUG
@@ -139,5 +145,6 @@ if __name__ == '__main__':
         # disable noisy logging of caught errors from asyncio
         logging.disable()
 
+    agenda = CrawlAgenda()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(start_url, pool_size))
+    loop.run_until_complete(main(agenda, start_url, pool_size, request_limit))
